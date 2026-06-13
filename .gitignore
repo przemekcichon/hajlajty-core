@@ -1,0 +1,29 @@
+# Ten plugin to osobny artefakt wdrażany przez WP Pusher.
+# Repo zawiera TYLKO kod pluginu — rdzeń WP i cudze rzeczy nie wchodzą.
+
+# Sekrety / środowisko (klucz api-football → wp-config/.env, nie tutaj)
+.env
+.env.*
+*.key
+*.pem
+secrets/
+**/credentials*
+**/*secret*
+
+# Zależności
+/vendor/
+/node_modules/
+
+# Build / cache
+*.log
+
+# Śmieci systemowe
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / edytory
+.idea/
+.vscode/
+*.swp
+*~
