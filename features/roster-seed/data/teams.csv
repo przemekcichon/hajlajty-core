@@ -3,3 +3,51 @@
 # Wiersz z pustym/zerowym api_id lub pustym fifa_code zostanie ODRZUCONY (nie zresolwuje się przy imporcie).
 nazwa_pl,api_id,fifa_code,name_en
 Polska,768,POL,Poland
+Belgia,1,BEL,Belgium
+Francja,2,FRA,France
+Chorwacja,3,CRO,Croatia
+Szwecja,5,SWE,Sweden
+Brazylia,6,BRA,Brazil
+Urugwaj,7,URU,Uruguay
+Kolumbia,8,COL,Colombia
+Hiszpania,9,ESP,Spain
+Anglia,10,ENG,England
+Panama,11,PAN,Panama
+Japonia,12,JPN,Japan
+Senegal,13,SEN,Senegal
+Szwajcaria,15,SUI,Switzerland
+Meksyk,16,MEX,Mexico
+Korea Południowa,17,KOR,South Korea
+Australia,20,AUS,Australia
+Iran,22,IRN,Iran
+Arabia Saudyjska,23,KSA,Saudi Arabia
+Niemcy,25,GER,Germany
+Argentyna,26,ARG,Argentina
+Portugalia,27,POR,Portugal
+Tunezja,28,TUN,Tunisia
+Maroko,31,MAR,Morocco
+Egipt,32,EGY,Egypt
+Czechy,770,CZE,Czechia
+Austria,775,AUT,Austria
+Turcja,777,TUR,Türkiye
+Norwegia,1090,NOR,Norway
+Szkocja,1108,SCO,Scotland
+Bośnia i Hercegowina,1113,BIH,Bosnia & Herzegovina
+Holandia,1118,NED,Netherlands
+Wybrzeże Kości Słoniowej,1501,CIV,Ivory Coast
+Ghana,1504,GHA,Ghana
+Demokratyczna Republika Konga,1508,CGO,Congo DR
+Republika Południowej Afryki,1531,RSA,South Africa
+Algieria,1532,ALG,Algeria
+Republika Zielonego Przylądka,1533,CPV,Cape Verde Islands
+Jordania,1548,JOR,Jordan
+Irak,1567,IRQ,Iraq
+Uzbekistan,1568,UZB,Uzbekistan
+Katar,1569,QAT,Qatar
+Paragwaj,2380,PAR,Paraguay
+Ekwador,2382,ECU,Ecuador
+Stany Zjednoczone,2384,USA,USA
+Haiti,2386,HAI,Haiti
+Nowa Zelandia,4673,NZL,New Zealand
+Kanada,5529,CAN,Canada
+Curaçao,5530,CUR,Curaçao
