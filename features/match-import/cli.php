@@ -10,8 +10,10 @@
  *    home/away = PL nazwy termów resolwowane po teams.{home,away}.id (api_id),
  *    kolejność gospodarz-gość z fixture'a, data = kickoff → Y-m-d. UPDATE NIE
  *    rusza slug; zmiana nazwy drużyny go NIE regeneruje.
- *  - post_date/post_date_gmt = kickoff (oś czasu WP-native; kickoff zostaje też
- *    w match_data RAW).
+ *  - post_date = czas PUBLIKACJI wpisu (wariant B), NIE termin meczu. Mecz jest
+ *    'publish' od razu — przyszły kickoff w post_date wpychał post w status
+ *    'future' (niewidoczny na froncie). Termin żyje w płaskiej meta `kickoff`
+ *    (UTC, klucz sortujący) + match_data.kickoff (surowy ISO do renderu).
  *  - Taksonomie: druzyna ×2 (po teams.id), rozgrywki (po league.id), sezon
  *    (po league.season — tworzony jeśli brak). `kanal` NIE z importu (redakcyjne).
  */
@@ -134,25 +136,38 @@ function hajlajty_import_process_fixture( $fixture ) {
 	$match_data = hajlajty_import_build_match_data( $fixture, $events, $lineups, $statistics );
 	$json       = wp_json_encode( $match_data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 
-	// Oś czasu WP-native = kickoff (UTC z API → gmt + lokalny).
+	// Termin meczu w UTC do płaskiej meta `kickoff` (grupa 3, klucz sortujący —
+	// MySQL nie sortuje po wartości wewnątrz match_data JSON). NIE trafia już do
+	// post_date (wariant B): przyszły kickoff wpychał post w status 'future'.
 	$kickoff     = (string) ( $fixture['fixture']['date'] ?? '' );
 	$ts          = $kickoff ? strtotime( $kickoff ) : false;
 	$gmt_kickoff = $ts ? gmdate( 'Y-m-d H:i:s', $ts ) : '';
-	$local_kick  = $gmt_kickoff ? get_date_from_gmt( $gmt_kickoff ) : '';
 
 	$existing_id = hajlajty_import_find_post_by_fixture_id( $fixture_id );
 
 	if ( $existing_id ) {
-		// UPDATE: odświeżamy dane i oś czasu, NIE ruszamy slug/tytułu (redakcja).
-		$postarr = array( 'ID' => $existing_id );
-		if ( $gmt_kickoff ) {
-			$postarr['post_date']     = $local_kick;
-			$postarr['post_date_gmt'] = $gmt_kickoff;
-			$postarr['edit_date']     = true; // bez tego WP nie zmieni post_date.
+		// UPDATE: odświeżamy dane (meta); NIE ruszamy slug/tytułu (redakcja) ani
+		// post_date (= czas publikacji, wariant B). Wyjątek: post osierocony w
+		// 'future' przez starą Fazę 2 (post_date = przyszły kickoff). WP wymusza
+		// 'future' DOPÓKI post_date jest w przyszłości, więc samo post_status=
+		// publish nie wystarczy — przesuwamy post_date na teraz i publikujemy.
+		if ( 'future' === get_post_status( $existing_id ) ) {
+			$now_gmt = current_time( 'mysql', true );
+			wp_update_post(
+				array(
+					'ID'            => $existing_id,
+					'post_status'   => 'publish',
+					'post_date'     => get_date_from_gmt( $now_gmt ),
+					'post_date_gmt' => $now_gmt,
+					'edit_date'     => true, // bez tego WP nie zmieni post_date.
+				)
+			);
 		}
-		wp_update_post( $postarr );
 		update_post_meta( $existing_id, 'match_data', $json );
 		update_post_meta( $existing_id, 'fixture_id', $fixture_id );
+		if ( $gmt_kickoff ) {
+			update_post_meta( $existing_id, 'kickoff', $gmt_kickoff );
+		}
 		hajlajty_import_assign_taxonomies( $existing_id, $home_id, $away_id, $fixture );
 
 		WP_CLI::log( sprintf( 'fixture %d → update posta #%d', $fixture_id, $existing_id ) );
@@ -175,16 +190,14 @@ function hajlajty_import_process_fixture( $fixture ) {
 
 	$slug = hajlajty_match_build_slug( $home_name, $away_name, hajlajty_import_kickoff_date( $kickoff ) );
 
+	// post_date NIE jest ustawiany — WP użyje czasu utworzenia (teraz), więc mecz
+	// jest 'publish' od razu, także zapowiedź z przyszłym kickoffem (wariant B).
 	$postarr = array(
 		'post_type'   => 'mecz',
 		'post_status' => 'publish',
 		'post_title'  => $home_name . ' – ' . $away_name,
 		'post_name'   => $slug,
 	);
-	if ( $gmt_kickoff ) {
-		$postarr['post_date']     = $local_kick;
-		$postarr['post_date_gmt'] = $gmt_kickoff;
-	}
 
 	$post_id = wp_insert_post( $postarr, true );
 	if ( is_wp_error( $post_id ) ) {
@@ -194,6 +207,9 @@ function hajlajty_import_process_fixture( $fixture ) {
 
 	update_post_meta( $post_id, 'match_data', $json );
 	update_post_meta( $post_id, 'fixture_id', $fixture_id );
+	if ( $gmt_kickoff ) {
+		update_post_meta( $post_id, 'kickoff', $gmt_kickoff );
+	}
 	hajlajty_import_assign_taxonomies( $post_id, $home_id, $away_id, $fixture );
 
 	WP_CLI::log( sprintf( 'fixture %d → nowy post #%d (slug: %s)', $fixture_id, $post_id, $slug ) );
