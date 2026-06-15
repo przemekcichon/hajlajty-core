@@ -1,0 +1,5 @@
+# name_en = ściągawka (EN nazwa z api-football) — parser IGNORUJE, nie zapisuje do term meta.
+# Wypełnij: nazwa_pl = polska nazwa rozgrywek (= nazwa termu) | league_id = league.id z api-football (>0).
+# Wiersz z pustym/zerowym league_id zostanie ODRZUCONY.
+nazwa_pl,league_id,name_en
+Mistrzostwa Świata,1,World Cup
