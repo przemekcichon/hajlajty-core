@@ -112,7 +112,15 @@ function hajlajty_import_map_events( $events, $home_id ) {
 	return $out;
 }
 
-/** Składy keyed by side; id/name/number/pos/grid zostają (reszta wycięta, sekcja B). */
+/**
+ * Składy keyed by side; id/name/number/pos/grid zostają.
+ *
+ * Faza 3bi: zachowujemy też `colors` (barwy koszulek — render maluje boisko) i
+ * `coach.name` (główka składu). `colors` trzymamy w kształcie z API, bez koercji
+ * (player.primary/number/border + goalkeeper.*); z `coach` bierzemy TYLKO `name`
+ * (id/photo nieużywane — render po nazwie). Reszta wycięcia (team.logo/name,
+ * player.* poza 5 polami) BEZ ZMIAN — sekcja B mapowania.
+ */
 function hajlajty_import_map_lineups( $lineups, $home_id ) {
 	if ( empty( $lineups ) || ! is_array( $lineups ) ) {
 		return array();
@@ -124,6 +132,8 @@ function hajlajty_import_map_lineups( $lineups, $home_id ) {
 
 		$out[ $side ] = array(
 			'formation'   => $team_lineup['formation'] ?? null,
+			'colors'      => $team_lineup['team']['colors'] ?? null, // kształt z API, zero koercji.
+			'coach'       => array( 'name' => $team_lineup['coach']['name'] ?? null ),
 			'startXI'     => hajlajty_import_map_players( $team_lineup['startXI'] ?? array() ),
 			'substitutes' => hajlajty_import_map_players( $team_lineup['substitutes'] ?? array() ),
 		);
