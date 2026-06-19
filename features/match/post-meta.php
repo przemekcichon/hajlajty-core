@@ -20,6 +20,14 @@
  *                 duplikacja danych filtrowalnych. Dana z importu, NIE redakcyjna
  *                 (więc meta, nie pole ACF). post_date pozostaje czasem PUBLIKACJI
  *                 wpisu, nie terminem meczu (wariant B — patrz slice importu).
+ *  - status     — SUROWY kod statusu meczu (`fixture.status.short`: NS/1H/HT/2H/
+ *                 FT/CANC…). PŁASKIE meta (grupa 3 doprecyzowania #3): klucz FILTRA
+ *                 list na poziomie SQL — lista „Na żywo" wybiera `status IN (kody
+ *                 live)`, czego nie da się zrobić po wartości wewnątrz match_data
+ *                 JSON. Świadoma dwurola z `match_data.status.short` (ten sam kod,
+ *                 dwie role: payload do renderu vs klucz filtra). Core trzyma kod
+ *                 SUROWO (wierny API); mapowanie short→stan PL żyje WYŁĄCZNIE w
+ *                 motywie (lookups.php) — bez drugiej kopii mapy w core (3e-i).
  *
  * show_in_rest => true: headless-ready (decyzja #6). `match_data` wystawiamy jako
  * surowy string JSON — bez schematu obiektu i BEZ warstwy pod GraphQL
@@ -64,6 +72,17 @@ function hajlajty_match_register_post_meta() {
 			'single'       => true,
 			'show_in_rest' => true,
 			'description'  => 'Termin meczu (UTC, Y-m-d H:i:s) — płaski klucz sortujący (grupa 3, doprecyzowanie #3).',
+		)
+	);
+
+	register_post_meta(
+		'mecz',
+		'status',
+		array(
+			'type'         => 'string',
+			'single'       => true,
+			'show_in_rest' => true,
+			'description'  => 'Surowy kod statusu meczu (fixture.status.short, np. NS/1H/FT) — płaski klucz filtra list (grupa 3, doprecyzowanie #3).',
 		)
 	);
 }

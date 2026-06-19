@@ -168,6 +168,10 @@ function hajlajty_import_process_fixture( $fixture ) {
 		if ( $gmt_kickoff ) {
 			update_post_meta( $existing_id, 'kickoff', $gmt_kickoff );
 		}
+		if ( '' !== $status ) {
+			// Płaski klucz filtra list (grupa 3) — surowy short, motyw mapuje na stan.
+			update_post_meta( $existing_id, 'status', $status );
+		}
 		hajlajty_import_assign_taxonomies( $existing_id, $home_id, $away_id, $fixture );
 
 		WP_CLI::log( sprintf( 'fixture %d → update posta #%d', $fixture_id, $existing_id ) );
@@ -209,6 +213,10 @@ function hajlajty_import_process_fixture( $fixture ) {
 	update_post_meta( $post_id, 'fixture_id', $fixture_id );
 	if ( $gmt_kickoff ) {
 		update_post_meta( $post_id, 'kickoff', $gmt_kickoff );
+	}
+	if ( '' !== $status ) {
+		// Płaski klucz filtra list (grupa 3) — surowy short, motyw mapuje na stan.
+		update_post_meta( $post_id, 'status', $status );
 	}
 	hajlajty_import_assign_taxonomies( $post_id, $home_id, $away_id, $fixture );
 
