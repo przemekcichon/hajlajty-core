@@ -14,9 +14,13 @@
  * `/fixtures/players` (D3.6 rozwiązane: zero nowego mapowania).
  *
  * Dwie świadome decyzje (różnica wobec zwykłego importu):
- *  1. ŚLEDZONE LIGI ONLY: pytamy `fixtures?live=<league-ids>`, nie `live=all`
- *     globalnie — inaczej process_fixture pobrałby events/lineups/stats dla setek
- *     nietrackowanych meczów na świecie (marnotrawstwo limitu API).
+ *  1. ŚLEDZONE LIGI ONLY: pytamy `fixtures?live=all`, a zawężamy do śledzonych
+ *     lig PO STRONIE KLIENTA (po `league.id`). Param `live` w api-football
+ *     przyjmuje TYLKO `all` albo listę z myślnikami `id-id-id` (≥2 ligi) — odrzuca
+ *     pojedyncze `live=1`. `live=all` jest jedyną formą ważną dla DOWOLNEJ liczby
+ *     śledzonych lig (także jednej). Detali (events/lineups/stats) i tak nie
+ *     pobieramy dla nietrackowanych meczów — gatekeeperem jest filtr `league.id`
+ *     + pre-check istnienia posta (niżej), zanim dotkniemy API/bazy.
  *  2. UPDATE-ONLY: import-live tylko ODŚWIEŻA istniejące mecze (pre-check po
  *     `fixture_id` PRZED process_fixture). Tworzenie wpisów z terminarza zostaje
  *     przy zwykłym `wp hajlajty import` (jeden punkt prawdy dla slugów/insertów).
@@ -65,23 +69,32 @@ function hajlajty_import_live_command( $args, $assoc_args ) {
 		WP_CLI::error( 'Brak śledzonych lig (term meta „league_id" w „rozgrywki"). Zaseeduj rozgrywki albo podaj --league=<id>.' );
 	}
 
-	// `live=<league-ids>` (dash-separated) — TYLKO śledzone ligi, nie `live=all`.
-	$live = hajlajty_import_request( 'fixtures', array( 'live' => implode( '-', $leagues ) ) );
+	// `live=all` (jedyna forma ważna dla dowolnej liczby lig; param `live` odrzuca
+	// pojedyncze `id`). Zawężenie do śledzonych lig robimy niżej, po `league.id`.
+	$live = hajlajty_import_request( 'fixtures', array( 'live' => 'all' ) );
 	if ( is_wp_error( $live ) ) {
 		WP_CLI::error( $live->get_error_message() );
 	}
 	if ( empty( $live ) ) {
-		WP_CLI::success( 'Brak meczów na żywo w śledzonych ligach — nic do odświeżenia.' );
+		WP_CLI::success( 'Brak meczów na żywo nigdzie — nic do odświeżenia.' );
 		return;
 	}
 
-	$counts = array(
+	$tracked = array_flip( $leagues ); // O(1) lookup po league.id.
+	$counts  = array(
 		'updated' => 0,
 		'absent'  => 0,
 		'skipped' => 0,
 	);
 
 	foreach ( $live as $fixture ) {
+		// Zawężenie klienckie: ligi spoza śledzonych pomijamy ZANIM dotkniemy bazy
+		// czy API (zero kosztu dla setek nietrackowanych meczów z `live=all`).
+		$lid = isset( $fixture['league']['id'] ) ? (int) $fixture['league']['id'] : 0;
+		if ( ! isset( $tracked[ $lid ] ) ) {
+			continue;
+		}
+
 		$fid = isset( $fixture['fixture']['id'] ) ? (int) $fixture['fixture']['id'] : 0;
 		if ( ! $fid ) {
 			WP_CLI::warning( 'Element live bez fixture.id — pomijam.' );
