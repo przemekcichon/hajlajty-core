@@ -360,14 +360,19 @@ function hajlajty_import_live_parse_leagues( $raw ) {
  * liczby śledzonych lig; detali nie pobieramy dla nietrackowanych/nieobecnych
  * meczów (gatekeeper: filtr league.id + pre-check posta przed dotknięciem API/bazy).
  *
- * @param int[] $leagues Lista śledzonych league.id (gate kliencki).
+ * @param int[]      $leagues Lista śledzonych league.id (gate kliencki).
+ * @param array|null $live    Opcjonalnie wcześniej pobrany `live=all` (cron pobiera
+ *                            go RAZ i karmi nim też auto-FT — „ten sam request").
+ *                            null = pobierz tutaj (ścieżka ręcznej komendy).
  * @return array{updated:int,absent:int,skipped:int,live_total:int}|WP_Error
  *         live_total = liczba meczów zwróconych przez `live=all` (przed filtrem lig).
  */
-function hajlajty_import_live_run( $leagues ) {
+function hajlajty_import_live_run( $leagues, $live = null ) {
 	// `live=all` (jedyna forma ważna dla dowolnej liczby lig; param `live` odrzuca
 	// pojedyncze `id`). Zawężenie do śledzonych lig robimy niżej, po `league.id`.
-	$live = hajlajty_import_request( 'fixtures', array( 'live' => 'all' ) );
+	if ( null === $live ) {
+		$live = hajlajty_import_request( 'fixtures', array( 'live' => 'all' ) );
+	}
 	if ( is_wp_error( $live ) ) {
 		return $live;
 	}
