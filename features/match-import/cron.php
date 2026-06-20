@@ -3,10 +3,20 @@
  * WP-Cron: zautomatyzowany live-import w OKNACH meczowych (3e-iv-a). Zastępuje
  * ręczne odpalanie `wp hajlajty import-live` zaplanowanym eventem ~1 min, ale
  * TYLKO wokół znanych `kickoff` śledzonych lig — nie ślepy polling 24/7 (budżet
- * API). Poza oknem callback kończy NATYCHMIAST, bez zapytań do live-API.
+ * API). Poza oknem callback kończy NATYCHMIAST, bez zapytań do live-API — z jednym
+ * wyjątkiem: STALE-FT (niżej).
  *
  * Cron ORKIESTRUJE, nie kopiuje: woła `hajlajty_import_live_run()` z runner.php —
  * tę samą logikę co ręczna komenda `import-live`. Jedno źródło, dwa wejścia.
+ *
+ * STALE-FT (korekta po runtime 3e-iv-a): auto-FT (domknięcie meczu, który zniknął
+ * z `live=all`) działa tylko, gdy tik trafi w OKNO. Gdy cron nie odpali się w oknie
+ * (na Localu brak nocnego ruchu; na prodzie luka systemowego crona dłuższa niż
+ * okno), mecz „wisi" w statusie live aż do ręcznego `import --fixture`. Dlatego
+ * tik POZA oknem dokłada stale-FT: jeśli istnieje mecz z płaską `status` ∈ kody
+ * live i `kickoff` starszym niż dolna granica okna, domyka go targetowanym
+ * `fixtures?id` (ten sam finalizator co auto-FT), BEZ `live=all`. Budżet chroniony:
+ * poza oknem API dotykamy TYLKO gdy realnie coś wisi (pusta lista = zero zapytań).
  *
  * Realia kadencji (USTALENIE 3e-iv-a): WP-Cron jest request-driven, a granulacja
  * OS-crona to min 1 min — „~15 s" jest nieosiągalne i niepotrzebne (poller 3e-iii
@@ -164,14 +174,48 @@ function hajlajty_cron_index_live_fixture_ids( $live ) {
 }
 
 /**
- * Auto-finalizacja FT bez nowego magazynu stanu: porównuje posty DB-live (płaska
- * `status` ∈ kody live) z bieżącym zbiorem `live=all`. Mecz obecny w DB-live, a
- * NIEOBECNY w `live=all`, zniknął bo się skończył — domykamy go targetowanym
- * `fixtures?id=<id>` (ścieżka `import --fixture`) i zapisujemy cokolwiek API zwróci.
+ * Domyka JEDEN mecz targetowanym `fixtures?id=<id>` (ścieżka `import --fixture`):
+ * pobiera cokolwiek API zwróci i zapisuje przez `process_fixture`. Wspólny
+ * finalizator dla auto-FT (mecz zniknął z `live=all`) i stale-FT (mecz zawieszony
+ * poza oknem) — JEDNO miejsce na request + zapis domknięcia.
  *
  * Idempotentne: ponowny `process_fixture` z tym samym statusem to no-op danych;
  * `FT/AET/PEN` → płaska `status` nie-live → poller 3e-iii dostaje `data-live="0"`
  * i milknie; `HT` (gdyby chwilowo zniknął) → zapis HT, mecz zostaje live.
+ *
+ * @param int $post_id ID posta „mecz".
+ * @return bool true gdy zapisano domknięcie; false gdy brak fixture_id albo API
+ *              nic nie zwróciło (zostawiamy mecz bez zmian).
+ */
+function hajlajty_cron_finalize_post( $post_id ) {
+	$fid = (int) get_post_meta( $post_id, 'fixture_id', true );
+	if ( ! $fid ) {
+		return false;
+	}
+
+	$fixtures = hajlajty_import_request( 'fixtures', array( 'id' => $fid ) );
+	if ( is_wp_error( $fixtures ) || empty( $fixtures ) ) {
+		hajlajty_import_log(
+			sprintf(
+				'domknięcie: fixture %d — fixtures?id zwróciło %s, pomijam.',
+				$fid,
+				is_wp_error( $fixtures ) ? $fixtures->get_error_message() : 'pusto'
+			),
+			'warning'
+		);
+		return false;
+	}
+
+	hajlajty_import_process_fixture( $fixtures[0] ); // zapis cokolwiek API zwróci.
+	return true;
+}
+
+/**
+ * Auto-finalizacja FT bez nowego magazynu stanu: porównuje posty DB-live (płaska
+ * `status` ∈ kody live) z bieżącym zbiorem `live=all`. Mecz obecny w DB-live, a
+ * NIEOBECNY w `live=all`, zniknął bo się skończył — domykamy go (finalize_post).
+ * Działa w oknie, gdzie `live=all` i tak jest pobrany — bez dodatkowego requestu
+ * na ten diff.
  *
  * @param array<int,true> $live_ids Zbiór fixture_id obecnych w `live=all`.
  * @return int Liczba domkniętych meczów.
@@ -200,25 +244,73 @@ function hajlajty_cron_auto_finalize( $live_ids ) {
 		if ( ! $fid || isset( $live_ids[ $fid ] ) ) {
 			continue; // brak fixture_id albo wciąż na żywo — zostaw.
 		}
-
-		// Zniknął z live=all → domknij jednym targetowanym requestem.
-		$fixtures = hajlajty_import_request( 'fixtures', array( 'id' => $fid ) );
-		if ( is_wp_error( $fixtures ) || empty( $fixtures ) ) {
-			hajlajty_import_log(
-				sprintf(
-					'auto-FT: fixture %d zniknął z live, ale fixtures?id zwróciło %s — pomijam.',
-					$fid,
-					is_wp_error( $fixtures ) ? $fixtures->get_error_message() : 'pusto'
-				),
-				'warning'
-			);
-			continue;
+		if ( hajlajty_cron_finalize_post( $post_id ) ) {
+			$closed++;
 		}
-
-		hajlajty_import_process_fixture( $fixtures[0] ); // zapis cokolwiek API zwróci.
-		$closed++;
 	}
 
+	return $closed;
+}
+
+/**
+ * ID-ki „ZAWIESZONYCH" meczów: płaska `status` ∈ kody live, ale `kickoff` starszy
+ * niż DOLNA granica okna (teraz − WINDOW_POST_MIN). Żaden mecz nie trwa 180 min,
+ * więc taki status utknął — najczęściej dlatego, że cron nie trafił w okno, gdy
+ * mecz się kończył (na Localu brak nocnego ruchu; na prodzie luka systemowego
+ * crona dłuższa niż okno po zniknięciu meczu z `live=all`), więc auto-FT nie
+ * zdążyło go domknąć i mecz „wisi" na froncie.
+ *
+ * Pusta lista = nic nie wisi → to także GATE: poza oknem dotykamy API TYLKO gdy
+ * realnie jakiś mecz wisi (zero zapytań, gdy zwróci []). Zbiór sam się opróżnia,
+ * bo finalize_post zapisuje status terminalny → mecz wypada z kodów live.
+ *
+ * @return int[] ID postów „mecz" do domknięcia.
+ */
+function hajlajty_cron_stale_live_post_ids() {
+	$cutoff = gmdate( 'Y-m-d H:i:s', time() - HAJLAJTY_CRON_WINDOW_POST_MIN * MINUTE_IN_SECONDS );
+
+	$query = new WP_Query(
+		array(
+			'post_type'      => 'mecz',
+			'post_status'    => 'publish',
+			'fields'         => 'ids',
+			'posts_per_page' => -1,
+			'no_found_rows'  => true,
+			'meta_query'     => array(
+				'relation' => 'AND',
+				array(
+					'key'     => 'status',
+					'value'   => hajlajty_cron_live_status_codes(),
+					'compare' => 'IN',
+				),
+				array(
+					'key'     => 'kickoff',
+					'value'   => $cutoff,
+					'compare' => '<',
+					'type'    => 'CHAR',
+				),
+			),
+		)
+	);
+
+	return $query->posts;
+}
+
+/**
+ * Domyka listę zawieszonych meczów, każdy targetowanym `fixtures?id` (finalize_post).
+ * BEZ `live=all` — sam wiek `kickoff` + status live wystarcza za dowód, że mecz jest
+ * już po gwizdku.
+ *
+ * @param int[] $post_ids ID postów do domknięcia.
+ * @return int Liczba domkniętych meczów.
+ */
+function hajlajty_cron_finalize_posts( $post_ids ) {
+	$closed = 0;
+	foreach ( $post_ids as $post_id ) {
+		if ( hajlajty_cron_finalize_post( $post_id ) ) {
+			$closed++;
+		}
+	}
 	return $closed;
 }
 
@@ -234,7 +326,16 @@ function hajlajty_cron_live_import_tick() {
 	}
 
 	if ( ! hajlajty_cron_has_match_in_window() ) {
-		return; // Poza oknem meczowym — ZERO zapytań do live-API (budżet).
+		// Poza oknem NIE pollujemy `live=all` (budżet). Ale domykamy mecze
+		// ZAWIESZONE w statusie live (np. cron nie trafił w okno, gdy mecz się
+		// kończył) — tylko gdy realnie jakiś wisi, jednym `fixtures?id` na mecz.
+		$stale = hajlajty_cron_stale_live_post_ids();
+		if ( empty( $stale ) ) {
+			return; // Poza oknem i nic nie wisi — ZERO zapytań do live-API.
+		}
+		$closed = hajlajty_cron_finalize_posts( $stale );
+		hajlajty_import_log( sprintf( 'cron stale-FT poza oknem: domknięto zawieszonych %d.', $closed ) );
+		return;
 	}
 
 	// Jeden `live=all` na tik — wspólny dla odświeżenia i diffu auto-FT.
