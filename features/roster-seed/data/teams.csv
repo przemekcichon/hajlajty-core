@@ -2,7 +2,7 @@
 # Wypełnij: nazwa_pl = polska nazwa drużyny (= nazwa termu) | api_id = team.id z api-football (>0) | fifa_code = 3 litery.
 # Wiersz z pustym/zerowym api_id lub pustym fifa_code zostanie ODRZUCONY (nie zresolwuje się przy imporcie).
 nazwa_pl,api_id,fifa_code,name_en
-Polska,768,POL,Poland
+Polska,24,POL,Poland
 Belgia,1,BEL,Belgium
 Francja,2,FRA,France
 Chorwacja,3,CRO,Croatia
