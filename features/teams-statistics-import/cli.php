@@ -76,29 +76,61 @@ function hajlajty_team_stats_command( $args, $assoc_args ) {
 		return;
 	}
 
-	// Cały roster: iterujemy wszystkie termy „druzyna" z `api_id`.
+	// Cały roster: iterujemy wszystkie termy „druzyna" z `api_id`. ŚWIADOMY kompromis
+	// (#8 — bez abstrakcji na zapas): bez --team odpytujemy WSZYSTKIE drużyny, także
+	// te spoza danej ligi. Dla rostera WŚ (~48 reprezentacji) to bez znaczenia. Gdy
+	// roster urośnie o kluby (Faza 5), nie-uczestnicy zwrócą puste response → skip
+	// (jedno zapytanie każdy). Wtedy warto filtrować po przynależności do ligi — ale
+	// ta mapa jeszcze nie istnieje, więc nie dorabiamy jej teraz. Cron jest już
+	// oszczędny: odświeża tylko pary, które ktoś realnie zaimportował (cron.php).
 	$api_ids = hajlajty_team_stats_all_team_api_ids();
 	if ( empty( $api_ids ) ) {
 		WP_CLI::error( 'Brak drużyn z meta api_id — zaseeduj roster (wp hajlajty roster).' );
 	}
 
+	$total   = count( $api_ids );
 	$saved   = 0;
 	$skipped = 0;
-	foreach ( $api_ids as $api_id ) {
+	foreach ( $api_ids as $i => $api_id ) {
 		$result = hajlajty_team_stats_import_run( $api_id, $league, $season );
-		if ( is_wp_error( $result ) ) {
-			++$skipped;
-		} else {
+		if ( ! is_wp_error( $result ) ) {
 			++$saved;
+			continue;
 		}
+
+		// Błąd ŁAGODNY i lokalny dla jednej drużyny: brak zaseedowanego termu albo
+		// drużyna nie gra w tej lidze (puste response). Pomijamy ją i lecimy dalej —
+		// to normalny przebieg sweepu, nie awaria.
+		if ( in_array( $result->get_error_code(), array( 'hajlajty_team_stats_no_term', 'hajlajty_team_stats_empty' ), true ) ) {
+			++$skipped;
+			continue;
+		}
+
+		// Błąd TRANSPORTU/KONFIGURACJI (HTTP, wyczerpany limit api-football, brak
+		// klucza, błąd w ciele) dotyczy CAŁEGO sweepu, nie tej jednej drużyny —
+		// kolejne zapytania to czysta strata limitu i powtórzą ten sam błąd.
+		// Przerywamy i raportujemy, jak daleko doszliśmy (brama budżetowa, #8).
+		WP_CLI::error(
+			sprintf(
+				'Sweep przerwany na drużynie api_id %d (%d/%d): %s. Dotąd zapisane %d, pominięte %d.',
+				$api_id,
+				$i + 1,
+				$total,
+				$result->get_error_message(),
+				$saved,
+				$skipped
+			)
+		);
 	}
 
+	// Po tej pętli `pominięte` znaczy WYŁĄCZNIE „brak termu / puste response" —
+	// błędy transportu już by ją przerwały powyżej, więc etykieta jest dokładna.
 	WP_CLI::success(
 		sprintf(
-			'Team-stats (liga %d, sezon %s): drużyn %d, zapisane %d, pominięte %d (brak termu / puste response).',
+			'Team-stats (liga %d, sezon %s): drużyn %d, zapisane %d, pominięte %d (brak termu / drużyna spoza ligi).',
 			$league,
 			hajlajty_team_stats_normalize_season( $season ),
-			count( $api_ids ),
+			$total,
 			$saved,
 			$skipped
 		)
