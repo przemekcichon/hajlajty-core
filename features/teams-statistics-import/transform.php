@@ -54,6 +54,15 @@ function hajlajty_team_stats_transform( $response, $league_id, $season ) {
 		return array();
 	}
 
+	// Realne statystyki ZAWSZE zawierają sekcję `fixtures` (nawet przy 0 meczów:
+	// same zera, patrz próbka). Jej brak = odpowiedź zdegenerowana (np. sam
+	// `league` bez statystyk) — zwracamy [], żeby runner potraktował to jak puste
+	// response i NIE zapisał bloba pełnego null. To strażnik gałęzi, którą goły
+	// `empty($response)` przepuszczał (obiekt niepusty, ale bez danych meczowych).
+	if ( ! is_array( $response['fixtures'] ?? null ) ) {
+		return array();
+	}
+
 	$fixtures = is_array( $response['fixtures'] ?? null ) ? $response['fixtures'] : array();
 	$goals    = is_array( $response['goals'] ?? null ) ? $response['goals'] : array();
 	$cards    = is_array( $response['cards'] ?? null ) ? $response['cards'] : array();
